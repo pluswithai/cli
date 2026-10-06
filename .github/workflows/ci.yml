@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Builds, runs unit + end-to-end tests, and fails below 100% coverage.
+      - run: npm test
+
+  # The published package promises Node 18.3+ (package.json "engines"); the
+  # test tooling needs newer Node, so the built CLI itself is smoke-tested here.
+  node18:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci && npm run build
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - run: node dist/bin.js --version
+      - run: node dist/bin.js run --help
+      - name: Missing key exits 2 without a request
+        run: |
+          set +e
+          PLUSWITHAI_API_KEY= node dist/bin.js projects
+          test $? -eq 2

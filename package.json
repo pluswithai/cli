@@ -1,0 +1,49 @@
+{
+  "name": "@pluswithai/cli",
+  "version": "0.2.0",
+  "description": "Run Pluswithai tests from CI and the terminal.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pluswithai/cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pluswithai/cli/issues"
+  },
+  "type": "module",
+  "bin": {
+    "pluswithai": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.3"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "npm run build && vitest run --coverage",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "pluswithai",
+    "playwright",
+    "e2e",
+    "testing",
+    "ci",
+    "qa"
+  ],
+  "homepage": "https://pluswithai.com/docs/integrations-and-api",
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@vitest/coverage-v8": "^4.1.11",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

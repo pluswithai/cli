@@ -1,0 +1,35 @@
+# Publishes to npm when a vX.Y.Z tag is pushed. Authenticates with npm
+# Trusted Publishing (OIDC): no npm token is stored in this repository, and
+# --provenance links each published version to the commit that built it.
+#
+# One-time setup on npmjs.com → @pluswithai/cli → Settings → Trusted
+# publishing: GitHub Actions, organization/user "pluswithai", repository
+# "cli", workflow "publish.yml".
+name: Publish
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # npm 11.5.1+ (bundled with Node 24) is required for Trusted Publishing.
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - name: Tag matches package.json
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm publish --provenance --access public
