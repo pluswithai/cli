@@ -71,6 +71,11 @@ describe("Client requests", () => {
 
     await c.startRun("shop", ["a.spec.ts"]);
     expect(JSON.parse(String(calls[1]!.init.body))).toEqual({ tests: ["a.spec.ts"] });
+
+    await c.startRun("shop", ["a.spec.ts"], undefined, { environment: "staging" });
+    expect(JSON.parse(String(calls[2]!.init.body))).toEqual({ tests: ["a.spec.ts"], environment: "staging" });
+    await c.startRun("shop", ["a.spec.ts"], "weur", { baseUrl: "https://shop-git-x.vercel.app" });
+    expect(JSON.parse(String(calls[3]!.init.body))).toEqual({ tests: ["a.spec.ts"], region: "weur", baseUrl: "https://shop-git-x.vercel.app" });
   });
 });
 

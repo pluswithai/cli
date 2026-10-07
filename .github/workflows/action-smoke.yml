@@ -1,0 +1,28 @@
+# Runs this repository's action.yml for real on GitHub, against the
+# production API with a key that does not exist: the action must install the
+# CLI, pass the inputs through and fail with the API's 401 — proving the
+# wiring without needing a real key.
+name: Action smoke test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: action
+        continue-on-error: true
+        uses: ./
+        with:
+          api-key: pwai_smokeTestKeyThatDoesNotExist00000000000
+          project: smoke
+          environment: staging
+      - name: The action ran and failed on authentication, as it must
+        run: test "${{ steps.action.outcome }}" = "failure"

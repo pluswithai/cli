@@ -42,8 +42,16 @@ function countsLine(outcome: RunOutcome): string {
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+/** The environment the runs targeted, when it was not the project URL. */
+function targetOf(outcome: RunOutcome): { environment: string; baseUrl: string } | null {
+  const r = [...outcome.results, ...outcome.pending].find((x) => x.environment && x.baseUrl);
+  return r ? { environment: r.environment!, baseUrl: r.baseUrl! } : null;
+}
+
 export function summaryText(outcome: RunOutcome, project: string, appUrl: string): string {
-  const lines = [`Pluswithai · ${project}: ${countsLine(outcome)}`];
+  const target = targetOf(outcome);
+  const where = target ? ` (${target.environment}: ${target.baseUrl})` : "";
+  const lines = [`Pluswithai · ${project}${where}: ${countsLine(outcome)}`];
   for (const r of outcome.results) if (r.status !== "passed") lines.push(`  ${progressLine(r)}`);
   if (outcome.pending.length) {
     lines.push(`Timed out waiting for ${plural(outcome.pending.length, "run")}: ${outcome.pending.map(fileOf).join(", ")}`);
@@ -64,10 +72,11 @@ export function markdownSummary(outcome: RunOutcome, project: string, appUrl: st
     ...outcome.results.map((r) => `| \`${mdCell(fileOf(r))}\` | ${MD_STATUS[r.status]} | ${formatDuration(r.duration)} |`),
     ...outcome.pending.map((r) => `| \`${mdCell(fileOf(r))}\` | ⏱️ still running | — |`),
   ];
+  const target = targetOf(outcome);
   return [
-    `### ${icon} Pluswithai · ${project}`,
+    `### ${icon} Pluswithai · ${project}${target ? ` · ${target.environment}` : ""}`,
     "",
-    countsLine(outcome),
+    countsLine(outcome) + (target ? `. Ran against ${target.baseUrl}` : ""),
     "",
     "| Test | Status | Duration |",
     "|---|---|---|",
@@ -136,7 +145,7 @@ export function junitXml(outcome: RunOutcome, project: string): string {
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     "<testsuites>",
-    `<testsuite name="${xml(`Pluswithai · ${project}`)}" tests="${outcome.results.length + c.pending}" failures="${c.failed}" errors="${c.error}" skipped="${c.pending}" time="${secs(total)}">`,
+    `<testsuite name="${xml(`Pluswithai · ${project}${targetOf(outcome) ? ` · ${targetOf(outcome)!.environment}` : ""}`)}" tests="${outcome.results.length + c.pending}" failures="${c.failed}" errors="${c.error}" skipped="${c.pending}" time="${secs(total)}">`,
     ...cases,
     "</testsuite>",
     "</testsuites>",
@@ -153,6 +162,8 @@ export function runJson(outcome: RunOutcome, project: string, appUrl: string) {
     passed: outcome.exitCode === 0,
     exitCode: outcome.exitCode,
     timedOut: outcome.timedOut,
+    environment: targetOf(outcome)?.environment ?? "production",
+    baseUrl: targetOf(outcome)?.baseUrl ?? null,
     counts: counts(outcome),
     results: outcome.results.map((r) => ({
       id: r.id,

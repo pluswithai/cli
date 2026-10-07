@@ -22,6 +22,14 @@ export interface RunResult {
   timestamp: number;
   scheduled: boolean;
   timedOut?: boolean;
+  environment?: string;
+  baseUrl?: string;
+}
+
+/** Where a run goes instead of the project URL: a named environment or a preview deploy. */
+export interface RunTarget {
+  environment?: string;
+  baseUrl?: string;
 }
 
 export interface Project {
@@ -84,8 +92,13 @@ export class Client {
     return (await this.request<{ run: RunResult }>("GET", path)).run;
   }
 
-  async startRun(project: string, tests: string[], region?: string): Promise<RunResult[]> {
-    const body = region ? { tests, region } : { tests };
+  async startRun(project: string, tests: string[], region?: string, target: RunTarget = {}): Promise<RunResult[]> {
+    const body = {
+      tests,
+      ...(region ? { region } : {}),
+      ...(target.environment ? { environment: target.environment } : {}),
+      ...(target.baseUrl ? { baseUrl: target.baseUrl } : {}),
+    };
     return (await this.request<{ results: RunResult[] }>("POST", `/projects/${encodeURIComponent(project)}/run-tests`, body)).results;
   }
 

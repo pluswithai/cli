@@ -21,6 +21,8 @@ export type Command =
       project: string;
       tests: string[];
       region: string | undefined;
+      environment: string | undefined;
+      baseUrl: string | undefined;
       timeoutSec: number;
       intervalSec: number;
       junit: string | undefined;
@@ -59,6 +61,8 @@ const OPTIONS: Record<CommandName, Options> = {
     ...PROJECT,
     test: { type: "string", short: "t", multiple: true },
     region: { type: "string" },
+    env: { type: "string", short: "e" },
+    "base-url": { type: "string" },
     timeout: { type: "string" },
     interval: { type: "string" },
     junit: { type: "string" },
@@ -116,12 +120,17 @@ export function parseCommand(argv: string[]): Command {
 
   switch (topic) {
     case "run":
+      if (values.env !== undefined && values["base-url"] !== undefined) {
+        throw new UsageError("Pass either --env or --base-url, not both.", topic);
+      }
       return {
         kind: "run",
         global,
         project: needProject(),
         tests: (values.test as string[] | undefined) ?? [],
         region: values.region as string | undefined,
+        environment: values.env as string | undefined,
+        baseUrl: values["base-url"] as string | undefined,
         timeoutSec: seconds(values.timeout as string | undefined, 1800, "--timeout", topic),
         intervalSec: seconds(values.interval as string | undefined, 5, "--interval", topic),
         junit: values.junit as string | undefined,
@@ -162,6 +171,9 @@ Options:
   -p, --project <name>   Project to run (required)
   -t, --test <file>      Test file to run; repeat for several (default: every test file)
   --region <id>          Run region (default: the project's)
+  -e, --env <name>       Environment from the project's Settings, e.g. staging (default: production)
+  --base-url <url>       Preview deploy to test, e.g. a pull request's Vercel URL (its host must
+                         match a preview host declared in the project's Settings)
   --timeout <seconds>    Give up waiting after this long (default 1800)
   --interval <seconds>   Time between status checks (default 5)
   --junit <path>         Also write a JUnit XML report

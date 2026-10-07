@@ -254,6 +254,13 @@ describe("main — run", () => {
     expect(h.err()).toContain("no test files");
   });
 
+  it("--env and --base-url reach the API", async () => {
+    const h = harness(["run", "-p", "shop", "-t", "a.spec.ts", "--env", "staging"]);
+    expect(await main(h.deps)).toBe(0);
+    const post = h.fetchFn.mock.calls.find((c) => (c[1] as RequestInit | undefined)?.method === "POST")!;
+    expect(JSON.parse(String((post[1] as RequestInit).body))).toEqual({ tests: ["a.spec.ts"], environment: "staging" });
+  });
+
   it("prints retry notices on stderr", async () => {
     let first = true;
     const h = harness(["run", "-p", "shop", "-t", "a.spec.ts"], {

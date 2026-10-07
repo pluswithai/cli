@@ -36,6 +36,8 @@ describe("parseCommand — run", () => {
       project: "shop",
       tests: [],
       region: undefined,
+      environment: undefined,
+      baseUrl: undefined,
       timeoutSec: 1800,
       intervalSec: 5,
       junit: undefined,
@@ -57,12 +59,22 @@ describe("parseCommand — run", () => {
       project: "shop",
       tests: ["a.spec.ts", "b.spec.ts"],
       region: "weur",
+      environment: undefined,
+      baseUrl: undefined,
       timeoutSec: 600,
       intervalSec: 2,
       junit: "out/junit.xml",
       json: true,
       summary: false,
     });
+  });
+
+  it("takes an environment or a preview base URL, not both", () => {
+    expect(parseCommand(["run", "-p", "shop", "--env", "staging"])).toMatchObject({ environment: "staging", baseUrl: undefined });
+    expect(parseCommand(["run", "-p", "shop", "--base-url", "https://shop-git-x.vercel.app"])).toMatchObject({ baseUrl: "https://shop-git-x.vercel.app", environment: undefined });
+    expect(() => parseCommand(["run", "-p", "shop", "--env", "staging", "--base-url", "https://x.example.com"])).toThrow(
+      new UsageError("Pass either --env or --base-url, not both.", "run"),
+    );
   });
 
   it("requires --project", () => {
@@ -138,6 +150,8 @@ describe("helpText", () => {
 
   it("documents each command's flags and exit codes for run", () => {
     expect(helpText("run")).toContain("--junit");
+    expect(helpText("run")).toContain("--env");
+    expect(helpText("run")).toContain("--base-url");
     expect(helpText("run")).toMatch(/Exit codes/);
     expect(helpText("runs")).toContain("--limit");
     expect(helpText("tests")).toContain("--project");

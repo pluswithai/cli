@@ -1,0 +1,71 @@
+name: Pluswithai tests
+description: Run your Pluswithai Playwright tests from a workflow — against production, a named environment or a pull request's preview deploy.
+author: Pluswithai
+branding:
+  icon: check-circle
+  color: green
+
+inputs:
+  api-key:
+    description: Pluswithai API key with CI access. Store it as a repository secret.
+    required: true
+  project:
+    description: Project name, as shown by `pluswithai projects`.
+    required: true
+  tests:
+    description: Test files to run, one per line. Default: every test file of the project.
+    required: false
+    default: ""
+  environment:
+    description: Environment from the project's Settings, e.g. staging. Default: production (the project URL).
+    required: false
+    default: ""
+  base-url:
+    description: A preview deploy to test, e.g. github.event.deployment_status.environment_url. Its host must match a preview host declared in the project's Settings.
+    required: false
+    default: ""
+  region:
+    description: Run region. Default: the project's.
+    required: false
+    default: ""
+  timeout:
+    description: Seconds to wait for results.
+    required: false
+    default: "1800"
+  junit:
+    description: Also write a JUnit XML report to this path.
+    required: false
+    default: ""
+  version:
+    description: "@pluswithai/cli version to run."
+    required: false
+    default: "0"
+
+runs:
+  using: composite
+  steps:
+    - name: Run Pluswithai tests
+      shell: bash
+      # Inputs reach the script only through env, never by ${{ }} inside it:
+      # a test name or URL can never become shell code.
+      env:
+        PLUSWITHAI_API_KEY: ${{ inputs.api-key }}
+        PWAI_PROJECT: ${{ inputs.project }}
+        PWAI_TESTS: ${{ inputs.tests }}
+        PWAI_ENVIRONMENT: ${{ inputs.environment }}
+        PWAI_BASE_URL: ${{ inputs.base-url }}
+        PWAI_REGION: ${{ inputs.region }}
+        PWAI_TIMEOUT: ${{ inputs.timeout }}
+        PWAI_JUNIT: ${{ inputs.junit }}
+        PWAI_VERSION: ${{ inputs.version }}
+      run: |
+        args=(run --project "$PWAI_PROJECT" --timeout "$PWAI_TIMEOUT")
+        while IFS= read -r test; do
+          test="$(printf '%s' "$test" | xargs)"
+          [ -n "$test" ] && args+=(--test "$test")
+        done <<< "$PWAI_TESTS"
+        [ -n "$PWAI_ENVIRONMENT" ] && args+=(--env "$PWAI_ENVIRONMENT")
+        [ -n "$PWAI_BASE_URL" ] && args+=(--base-url "$PWAI_BASE_URL")
+        [ -n "$PWAI_REGION" ] && args+=(--region "$PWAI_REGION")
+        [ -n "$PWAI_JUNIT" ] && args+=(--junit "$PWAI_JUNIT")
+        npx -y "@pluswithai/cli@${PWAI_VERSION}" "${args[@]}"

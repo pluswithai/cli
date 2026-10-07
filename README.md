@@ -28,7 +28,7 @@ Details: https://pluswithai.com/app?project=shop
 
 ## GitHub Actions
 
-Store the key as the repository secret `PLUSWITHAI_API_KEY`:
+Store the key as the repository secret `PLUSWITHAI_API_KEY` and use the action:
 
 ```yaml
 name: Pluswithai tests
@@ -38,13 +38,33 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v4
+      - uses: pluswithai/cli@v0
         with:
-          node-version: 22
-      - run: npx -y @pluswithai/cli run --project shop --junit reports/pluswithai.xml
-        env:
-          PLUSWITHAI_API_KEY: ${{ secrets.PLUSWITHAI_API_KEY }}
+          api-key: ${{ secrets.PLUSWITHAI_API_KEY }}
+          project: shop
+          environment: staging   # optional; default is production (the project URL)
 ```
+
+To test every pull request's **preview deploy** (Vercel, Netlify, Cloudflare Pages)
+and block the merge when a test fails:
+
+```yaml
+on: deployment_status
+jobs:
+  e2e:
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: pluswithai/cli@v0
+        with:
+          api-key: ${{ secrets.PLUSWITHAI_API_KEY }}
+          project: shop
+          base-url: ${{ github.event.deployment_status.environment_url }}
+```
+
+The preview's host must match a preview host pattern declared in the project's
+Settings, e.g. `myapp-*.vercel.app`. See
+[Environments and PR checks](https://pluswithai.com/docs/environments-and-pr-checks).
 
 Inside GitHub Actions, the CLI also:
 
@@ -91,6 +111,8 @@ Use a key with **Agent** access to get every tool. Logs go to stderr; stdout car
 | `-p, --project <name>` | — | Required |
 | `-t, --test <file>` | every test file | Repeat it to run several files |
 | `--region <id>` | the project's region | Where the browser runs |
+| `-e, --env <name>` | production | An environment from the project's Settings, e.g. `staging` |
+| `--base-url <url>` | — | A preview deploy to test; its host must match a declared preview host |
 | `--timeout <seconds>` | 1800 | Stop waiting after this long, counted from when the runs start |
 | `--interval <seconds>` | 5 | Time between status checks |
 | `--junit <path>` | — | Also write a JUnit XML report |

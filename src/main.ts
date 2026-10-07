@@ -150,6 +150,8 @@ async function runCommand(
       project: command.project,
       tests: command.tests,
       region: command.region,
+      environment: command.environment,
+      baseUrl: command.baseUrl,
       timeoutMs: command.timeoutSec * 1000,
       intervalMs: command.intervalSec * 1000,
     },

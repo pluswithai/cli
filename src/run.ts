@@ -2,7 +2,7 @@
  * `pluswithai run`: start → poll → verdict (SPEC.md §2.1, §3). Time and
  * sleeping are injected so the whole loop runs instantly under test.
  */
-import { ApiError, type RunResult } from "./client.js";
+import { ApiError, type RunResult, type RunTarget } from "./client.js";
 
 export const MAX_START_RETRIES = 3;
 export const MAX_POLL_FAILURES = 3;
@@ -11,7 +11,7 @@ export const MAX_RETRY_AFTER_SECONDS = 60;
 
 export interface RunClient {
   testFiles(project: string): Promise<string[]>;
-  startRun(project: string, tests: string[], region?: string): Promise<RunResult[]>;
+  startRun(project: string, tests: string[], region?: string, target?: RunTarget): Promise<RunResult[]>;
   run(project: string, id: string): Promise<RunResult>;
 }
 
@@ -29,6 +29,8 @@ export interface RunOptions {
   /** Empty = every test file of the project. */
   tests: string[];
   region?: string;
+  environment?: string;
+  baseUrl?: string;
   timeoutMs: number;
   intervalMs: number;
 }
@@ -61,7 +63,8 @@ export function exitCodeFor(results: RunResult[], timedOut: boolean): number {
 async function start(deps: RunDeps, opts: RunOptions, tests: string[]): Promise<RunResult[]> {
   for (let attempt = 0; ; attempt++) {
     try {
-      return await deps.client.startRun(opts.project, tests, opts.region);
+      const target: RunTarget = opts.environment ? { environment: opts.environment } : opts.baseUrl ? { baseUrl: opts.baseUrl } : {};
+      return await deps.client.startRun(opts.project, tests, opts.region, target);
     } catch (e) {
       if (!(e instanceof ApiError) || e.status !== 429 || attempt >= MAX_START_RETRIES) throw e;
       const wait = Math.min(e.retryAfterSeconds ?? DEFAULT_RETRY_AFTER_SECONDS, MAX_RETRY_AFTER_SECONDS);

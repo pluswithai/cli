@@ -63,6 +63,16 @@ describe("executeRun", () => {
     expect(c.sleeps).toEqual([5000, 5000]);
   });
 
+  it("passes the environment or preview URL through to the API", async () => {
+    const client = fakeClient({ "a.spec.ts": ["passed"] });
+    const seen: unknown[] = [];
+    const real = client.startRun;
+    client.startRun = vi.fn(async (p: string, t: string[], r?: string, target?: unknown) => { seen.push(target); return real(p, t, r); });
+    await executeRun({ client, ...clock() }, opts({ environment: "staging" }));
+    await executeRun({ client, ...clock() }, opts({ baseUrl: "https://shop-git-x.vercel.app" }));
+    expect(seen).toEqual([{ environment: "staging" }, { baseUrl: "https://shop-git-x.vercel.app" }]);
+  });
+
   it("uses the given tests and region instead of listing the project", async () => {
     const client = fakeClient({});
     await executeRun({ client, ...clock() }, opts({ tests: ["only.spec.ts"], region: "weur" }));

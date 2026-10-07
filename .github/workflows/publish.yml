@@ -12,7 +12,8 @@ on:
     tags: ["v*.*.*"]
 
 permissions:
-  contents: read
+  # write: to move the major tag (v0) that `uses: pluswithai/cli@v0` resolves.
+  contents: write
   id-token: write
 
 jobs:
@@ -33,3 +34,9 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm publish --provenance --access public
+      - name: Move the major tag for the GitHub Action
+        run: |
+          major="v${GITHUB_REF_NAME#v}"
+          major="${major%%.*}"
+          git tag -f "$major" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$major"

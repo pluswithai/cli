@@ -187,6 +187,8 @@ describe("runJson", () => {
       passed: false,
       exitCode: 1,
       timedOut: false,
+      environment: "production",
+      baseUrl: null,
       counts: { passed: 1, failed: 1, error: 1, pending: 0 },
       results: [
         { id: "r1", file: "tests/a.spec.ts", status: "passed", durationMs: 12_300, timedOut: false },
@@ -269,5 +271,32 @@ describe("annotation message without a Playwright failure block", () => {
   it("starts at the first Error: line", () => {
     const [line] = annotations({ results: [run({ status: "error", stdout: "warming up\nTypeError: x is undefined\n  at y" })], pending: [], timedOut: false, exitCode: 3 });
     expect(line).toContain("::TypeError: x is undefined%0A  at y");
+  });
+});
+
+describe("environment in reports (ENVIRONMENTS_SPEC.md §5)", () => {
+  const withEnv = (): RunOutcome => ({
+    results: [run({ status: "passed", environment: "preview", baseUrl: "https://shop-git-x.vercel.app" })],
+    pending: [],
+    timedOut: false,
+    exitCode: 0,
+  });
+
+  it("the text summary and the step summary name the environment and its URL", () => {
+    expect(summaryText(withEnv(), "shop", APP)).toContain("Pluswithai · shop (preview: https://shop-git-x.vercel.app): 1 passed");
+    expect(markdownSummary(withEnv(), "shop", APP)).toContain("### ✅ Pluswithai · shop · preview");
+    expect(markdownSummary(withEnv(), "shop", APP)).toContain("Ran against https://shop-git-x.vercel.app");
+  });
+
+  it("JUnit and --json carry it too", () => {
+    expect(junitXml(withEnv(), "shop")).toContain('name="Pluswithai · shop · preview"');
+    expect(runJson(withEnv(), "shop", APP)).toMatchObject({ environment: "preview", baseUrl: "https://shop-git-x.vercel.app" });
+  });
+
+  it("nothing changes for a run against the project URL", () => {
+    const plain = outcome({ results: [run()], exitCode: 0 });
+    expect(summaryText(plain, "shop", APP)).toContain("Pluswithai · shop: 1 passed");
+    expect(markdownSummary(plain, "shop", APP)).not.toContain("Ran against");
+    expect(runJson(plain, "shop", APP)).toMatchObject({ environment: "production", baseUrl: null });
   });
 });
