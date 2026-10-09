@@ -45,8 +45,9 @@ export function resolveConfig(flags: GlobalFlags, env: Env): Config {
   }
   return {
     apiKey,
-    apiUrl: httpUrl(flags.apiUrl ?? env.PLUSWITHAI_API_URL ?? DEFAULT_API_URL, "--api-url"),
-    appUrl: httpUrl(flags.appUrl ?? env.PLUSWITHAI_APP_URL ?? DEFAULT_APP_URL, "--app-url"),
+    // `||`, not `??`: a blank variable (an unset CI input) means "default".
+    apiUrl: httpUrl(flags.apiUrl ?? (env.PLUSWITHAI_API_URL || DEFAULT_API_URL), "--api-url"),
+    appUrl: httpUrl(flags.appUrl ?? (env.PLUSWITHAI_APP_URL || DEFAULT_APP_URL), "--app-url"),
   };
 }
 

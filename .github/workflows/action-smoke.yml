@@ -1,7 +1,7 @@
-# Runs this repository's action.yml for real on GitHub, against the
-# production API with a key that does not exist: the action must install the
-# CLI, pass the inputs through and fail with the API's 401 — proving the
-# wiring without needing a real key.
+# Runs this repository's action.yml for real on GitHub: it installs the CLI
+# built from this commit and talks to a fake API on localhost
+# (.github/smoke/fake-api.mjs). Each case checks what the API received and
+# the verdict, so a broken manifest, input or wiring fails here first.
 name: Action smoke test
 
 on:
@@ -12,17 +12,93 @@ on:
 permissions:
   contents: read
 
+env:
+  API_KEY: pwai_smokeTestKey
+  API_URL: http://127.0.0.1:8787
+  LOG: ${{ github.workspace }}/../fake-api.jsonl
+
 jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - id: action
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Pack the CLI from this commit
+        run: |
+          npm ci
+          npm run build
+          npm pack --pack-destination "$RUNNER_TEMP"
+          echo "CLI=file:$(ls "$RUNNER_TEMP"/pluswithai-cli-*.tgz)" >> "$GITHUB_ENV"
+
+      - name: Start the fake API
+        run: |
+          node .github/smoke/fake-api.mjs 8787 "$LOG" "$API_KEY" &
+          for _ in $(seq 20); do curl -sf "$API_URL/health" && exit 0; sleep 0.5; done
+          exit 1
+
+      - name: "Case 1: a preview deploy, two tests, JUnit"
+        uses: ./
+        with:
+          api-key: ${{ env.API_KEY }}
+          api-url: ${{ env.API_URL }}
+          version: ${{ env.CLI }}
+          project: smoke
+          tests: |
+            checkout.spec.ts
+              search.spec.ts
+          base-url: https://shop-git-feature-acme.vercel.app
+          junit: junit.xml
+          timeout: "60"
+      - name: Check case 1
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const reqs = readFileSync(process.env.LOG, "utf8").trim().split("\n").map(JSON.parse);
+            const start = reqs.find((r) => r.method === "POST");
+            const ok =
+              start.url === "/projects/smoke/run-tests" &&
+              start.auth === `Bearer ${process.env.API_KEY}` &&
+              JSON.stringify(start.body) === JSON.stringify({ tests: ["checkout.spec.ts", "search.spec.ts"], baseUrl: "https://shop-git-feature-acme.vercel.app" }) &&
+              /<testsuite name="Pluswithai · smoke · preview" tests="2" failures="0"/.test(readFileSync("junit.xml", "utf8"));
+            if (!ok) { console.error(JSON.stringify(reqs, null, 2)); process.exit(1); }
+          '
+          : > "$LOG"
+
+      - name: "Case 2: a named environment, every test file"
+        uses: ./
+        with:
+          api-key: ${{ env.API_KEY }}
+          api-url: ${{ env.API_URL }}
+          version: ${{ env.CLI }}
+          project: smoke
+          environment: staging
+          timeout: "60"
+      - name: Check case 2
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            const reqs = readFileSync(process.env.LOG, "utf8").trim().split("\n").map(JSON.parse);
+            const start = reqs.find((r) => r.method === "POST");
+            if (JSON.stringify(start.body) !== JSON.stringify({ tests: ["home.spec.ts"], environment: "staging" })) {
+              console.error(JSON.stringify(reqs, null, 2));
+              process.exit(1);
+            }
+          '
+
+      - name: "Case 3: a failing test fails the step"
+        id: failing
         continue-on-error: true
         uses: ./
         with:
-          api-key: pwai_smokeTestKeyThatDoesNotExist00000000000
+          api-key: ${{ env.API_KEY }}
+          api-url: ${{ env.API_URL }}
+          version: ${{ env.CLI }}
           project: smoke
-          environment: staging
-      - name: The action ran and failed on authentication, as it must
-        run: test "${{ steps.action.outcome }}" = "failure"
+          tests: will-fail.spec.ts
+          timeout: "60"
+      - name: Check case 3
+        run: test "${{ steps.failing.outcome }}" = "failure"

@@ -23,6 +23,13 @@ describe("resolveConfig", () => {
     });
   });
 
+  it("treats an empty URL variable as unset (a CI input left blank)", () => {
+    expect(resolveConfig({}, { PLUSWITHAI_API_KEY: KEY, PLUSWITHAI_API_URL: "", PLUSWITHAI_APP_URL: "" })).toMatchObject({
+      apiUrl: DEFAULT_API_URL,
+      appUrl: DEFAULT_APP_URL,
+    });
+  });
+
   it("trims the key (a pasted secret often carries a newline)", () => {
     expect(resolveConfig({}, { PLUSWITHAI_API_KEY: `  ${KEY}\n` }).apiKey).toBe(KEY);
   });
