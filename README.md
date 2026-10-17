@@ -9,7 +9,7 @@ It starts the runs, waits for them and exits non-zero when one fails.
 
 ## Quick start
 
-1. In the app, open **API keys** in the sidebar, choose **Create key**, then pick **CI**.
+1. In the app, open **API keys** in the sidebar, choose **Create key**, then pick **CI / CLI**.
 2. Export the key, then run your project's tests:
 
 ```sh
@@ -75,7 +75,9 @@ Inside GitHub Actions, the CLI also:
 
 | Command | What it does |
 |---|---|
-| `pluswithai run --project <name>` | Start runs, wait for them, exit with their verdict |
+| `pluswithai run --project <name>` | Start runs in the cloud, wait for them, exit with their verdict |
+| `pluswithai local --project <name>` | Run the project's tests on this machine, e.g. against `localhost` |
+| `pluswithai pull --project <name>` | Download the project's files to run them yourself |
 | `pluswithai projects` | List your projects |
 | `pluswithai tests --project <name>` | List a project's test files |
 | `pluswithai runs --project <name>` | Show recent runs (`--limit`, 1–100) |
@@ -83,6 +85,23 @@ Inside GitHub Actions, the CLI also:
 | `pluswithai mcp` | Serve Pluswithai's MCP tools over stdio, for AI agents |
 
 Every command takes `--help`, and every command except `mcp` takes `--json`.
+
+## Run tests on your machine
+
+`pluswithai local` downloads the project's tests, installs Playwright the first
+time and runs them here — useful against a local server before you deploy:
+
+```bash
+pluswithai local --project shop --base-url http://localhost:3000
+pluswithai local --project shop -t tests/checkout.spec.ts --headed
+```
+
+The files go to `pluswithai/<project>` (`--dir` to change it): plain Playwright
+plus the project's config and fixture, so `npx playwright test` works there on
+its own too (`pluswithai pull` only downloads). The site's HTTP auth and extra
+headers stay on Pluswithai: set `PLUSWITHAI_HTTP_USERNAME`,
+`PLUSWITHAI_HTTP_PASSWORD` and `PLUSWITHAI_EXTRA_HEADERS` (a JSON object) when
+the site needs them. Needs Node.js 18+.
 
 ## AI agents (MCP)
 

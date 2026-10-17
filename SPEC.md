@@ -22,6 +22,9 @@ bridge to Pluswithai's MCP server (`pluswithai mcp`).
 ```
 pluswithai run      --project <name> [--test <file>]... [--region <id>]
                     [--timeout <s>] [--interval <s>] [--junit <path>] [--json] [--no-summary]
+pluswithai local    --project <name> [--dir <path>] [--test <file>]... [--base-url <url>]
+                    [--headed] [--no-pull]
+pluswithai pull     --project <name> [--dir <path>] [--json]
 pluswithai projects [--json]
 pluswithai tests    --project <name> [--json]
 pluswithai runs     --project <name> [--limit <n>] [--json]
@@ -58,6 +61,28 @@ default `https://pluswithai.com`). Flags beat env; env beats defaults.
    - `GITHUB_ACTIONS=true` → one `::error title=…::…` annotation per failed run.
 8. `--junit <path>` writes JUnit XML (one `<testcase>` per file; failures and
    errors carry the first lines of stderr/stdout).
+
+### 2.1.1 `local` and `pull`: a local run
+
+`run` runs in Pluswithai's cloud; `local` runs on this machine, e.g. against
+`localhost` before a deploy.
+
+1. `pull`: `GET /projects/:p/export` (402 with a hint if the plan cannot download) →
+   the files HEAD tracks, already portable. Each is written under `--dir`
+   (default `pluswithai/<project>`); a path that is absolute, has `..`, a
+   backslash or a NUL is skipped and reported. `.pluswithai/pulled.json`
+   lists what was written, so the next pull removes files the project dropped.
+2. `local`: `pull` (unless `--no-pull`, which needs a project already in
+   `--dir`), then, when `--dir/node_modules` is missing, `npm install` and
+   `npx playwright install chromium`, then `npx playwright test [files]
+   [--headed]` in `--dir` with this terminal's stdio. `--base-url` sets
+   `PLUSWITHAI_BASE_URL`, which the portable config reads before the
+   project's URL.
+3. Exit: 0 when Playwright passes, 1 when it fails, 2 when npm/npx cannot
+   start or an install step fails, 3 for API errors.
+4. Secrets stay on Pluswithai: the site's HTTP auth and extra headers come
+   from `PLUSWITHAI_HTTP_USERNAME`, `PLUSWITHAI_HTTP_PASSWORD` and
+   `PLUSWITHAI_EXTRA_HEADERS`, as the exported config already reads them.
 
 ### 2.2 Read commands
 

@@ -39,6 +39,12 @@ export interface Project {
   createdAt: string;
 }
 
+/** A project's files as the API exports them (base64), for a local run. */
+export interface ExportedFiles {
+  headOid: string | null;
+  files: Array<{ path: string; base64: string; size: number }>;
+}
+
 export interface Me {
   userId: string;
   email: string | null;
@@ -77,6 +83,11 @@ export class Client {
 
   async projects(): Promise<Project[]> {
     return (await this.request<{ projects: Project[] }>("GET", "/projects")).projects;
+  }
+
+  /** The files HEAD tracks, portable (no container paths, no secrets). Pro: 402 otherwise. */
+  exportFiles(project: string): Promise<ExportedFiles> {
+    return this.request<ExportedFiles>("GET", `/projects/${encodeURIComponent(project)}/export`);
   }
 
   async testFiles(project: string): Promise<string[]> {

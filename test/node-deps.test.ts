@@ -89,3 +89,39 @@ describe("version", () => {
     expect(VERSION).toBe(pkg.version);
   });
 });
+
+describe("nodeDeps — files and processes for a local run", () => {
+  it("writes bytes (making folders), reads text back, removes, and tells whether a path exists", async () => {
+    const deps = nodeDeps({ argv: [], env: {} });
+    const dir = mkdtempSync(join(tmpdir(), "pwai-local-"));
+    const file = join(dir, "a", "b.txt");
+    expect(await deps.exists(file)).toBe(false);
+    expect(await deps.readText(file)).toBeNull();
+    await deps.writeBytes(file, new TextEncoder().encode("hi"));
+    expect(await deps.exists(file)).toBe(true);
+    expect(await deps.readText(file)).toBe("hi");
+    await deps.remove(file);
+    await deps.remove(file);
+    expect(await deps.exists(file)).toBe(false);
+  });
+
+  it("runs a command in a folder with an environment and resolves its exit code", async () => {
+    const deps = nodeDeps({ argv: [], env: {} });
+    const dir = mkdtempSync(join(tmpdir(), "pwai-spawn-"));
+    const out = join(dir, "seen.txt");
+    const code = await deps.spawn(
+      process.execPath,
+      ["-e", `require('fs').writeFileSync(${JSON.stringify(out)}, process.cwd() + '|' + process.env.PWAI_X); process.exit(3)`],
+      { cwd: dir, env: { ...process.env, PWAI_X: "y" } },
+    );
+    expect(code).toBe(3);
+    expect(readFileSync(out, "utf8")).toMatch(/\|y$/);
+  });
+
+  it("a process killed by a signal counts as a failure; a missing command rejects", async () => {
+    const deps = nodeDeps({ argv: [], env: {} });
+    const killed = await deps.spawn(process.execPath, ["-e", "process.kill(process.pid, 'SIGTERM')"], { cwd: tmpdir(), env: process.env });
+    expect(killed).toBe(1);
+    await expect(deps.spawn("pwai-no-such-command-xyz", [], { cwd: tmpdir(), env: process.env })).rejects.toThrow();
+  });
+});

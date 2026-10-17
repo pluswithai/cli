@@ -21,9 +21,10 @@ import {
 } from "./report.js";
 import { executeRun, NoTestsError } from "./run.js";
 import { runMcpProxy } from "./mcp-proxy.js";
+import { defaultDir, LocalSetupError, pullProject, testLocally, type LocalDeps } from "./local.js";
 import { VERSION } from "./version.js";
 
-export interface MainDeps {
+export interface MainDeps extends Omit<LocalDeps, "log"> {
   argv: string[];
   env: Env;
   fetch: typeof fetch;
@@ -97,6 +98,28 @@ export async function main(deps: MainDeps): Promise<number> {
       }
       case "run":
         return await runCommand(deps, config, client, command);
+      case "pull": {
+        const dir = command.dir ?? defaultDir(command.project);
+        const pulled = await pullProject(deps, client, command.project, dir);
+        print(
+          command.json,
+          pulled,
+          `Pulled ${pulled.written} files into ${pulled.dir}${pulled.removed ? ` (removed ${pulled.removed} the project no longer has)` : ""}.\n` +
+            `Run them: cd ${pulled.dir} && npm install && npx playwright install chromium && npx playwright test`,
+        );
+        if (pulled.skipped.length) deps.stderr(line(`warning: skipped ${pulled.skipped.length} file(s) with unsafe paths: ${pulled.skipped.join(", ")}`));
+        return EXIT.ok;
+      }
+      case "local":
+        return await testLocally({ ...deps, log: (t) => deps.stderr(line(t)) }, client, {
+          project: command.project,
+          dir: command.dir ?? defaultDir(command.project),
+          tests: command.tests,
+          baseUrl: command.baseUrl,
+          headed: command.headed,
+          pull: command.pull,
+          env: deps.env,
+        });
       case "mcp":
         deps.stderr(line(`Pluswithai MCP proxy → ${config.apiUrl}/mcp`));
         return await runMcpProxy({
@@ -109,6 +132,10 @@ export async function main(deps: MainDeps): Promise<number> {
         });
     }
   } catch (e) {
+    if (e instanceof LocalSetupError) {
+      deps.stderr(line(`error: ${e.message}`));
+      return EXIT.usage;
+    }
     if (e instanceof NoTestsError) {
       deps.stderr(line(`error: ${e.message}`));
       return EXIT.usage;
@@ -126,7 +153,8 @@ export async function main(deps: MainDeps): Promise<number> {
 
 function hintFor(e: ApiError, command: Command): string | null {
   if (e.status === 401) return "Check PLUSWITHAI_API_KEY (create one on the app's API keys page).";
-  if (e.status === 403 && command.kind === "run") return "Starting runs needs a key with CI (read + run) access.";
+  if (e.status === 403 && command.kind === "run") return "Starting runs needs a key with CI / CLI (read + run) access.";
+  if (e.status === 402 && (command.kind === "pull" || command.kind === "local")) return "Your plan cannot download this project's files.";
   if (e.status === 404 && "project" in command) return `Check the project name "${command.project}" (pluswithai projects lists them).`;
   return null;
 }
