@@ -274,7 +274,7 @@ describe("annotation message without a Playwright failure block", () => {
   });
 });
 
-describe("environment in reports (ENVIRONMENTS_SPEC.md §5)", () => {
+describe("environment in reports", () => {
   const withEnv = (): RunOutcome => ({
     results: [run({ status: "passed", environment: "preview", baseUrl: "https://shop-git-x.vercel.app" })],
     pending: [],

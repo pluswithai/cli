@@ -160,3 +160,32 @@ describe("helpText", () => {
     expect(helpText("mcp")).toMatch(/stdio/);
   });
 });
+
+describe("parseCommand — local and pull (a local run)", () => {
+  it("local: project, folder, files, base URL, headed, no-pull", () => {
+    expect(parseCommand(["local", "-p", "shop", "--dir", "d", "-t", "a", "-t", "b", "--base-url", "http://localhost:3000", "--headed", "--no-pull"])).toEqual({
+      kind: "local",
+      global: {},
+      project: "shop",
+      dir: "d",
+      tests: ["a", "b"],
+      baseUrl: "http://localhost:3000",
+      headed: true,
+      pull: false,
+    });
+    expect(parseCommand(["local", "-p", "shop"])).toMatchObject({ dir: undefined, tests: [], baseUrl: undefined, headed: false, pull: true });
+    expect(() => parseCommand(["local"])).toThrow(/Missing --project/);
+  });
+
+  it("pull: project, folder, json", () => {
+    expect(parseCommand(["pull", "-p", "shop", "--dir", "d", "--json"])).toEqual({ kind: "pull", global: {}, project: "shop", dir: "d", json: true });
+    expect(() => parseCommand(["pull"])).toThrow(/Missing --project/);
+  });
+
+  it("documents both, with the secrets they do not download", () => {
+    expect(helpText()).toContain("pull");
+    expect(helpText("local")).toContain("--base-url");
+    expect(helpText("local")).toContain("PLUSWITHAI_HTTP_USERNAME");
+    expect(helpText("pull")).toContain("npx playwright test");
+  });
+});

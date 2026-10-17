@@ -12,7 +12,18 @@ interface FakeApi {
   script?: Record<string, RunResult["status"][]>;
   /** Override any route: return a Response to short-circuit. */
   route?: (method: string, path: string) => Response | undefined;
+  /** Exit code per spawned command ("npm", "npx playwright install", "npx playwright test"). */
+  spawn?: (command: string, args: string[]) => number;
 }
+
+const b64 = (text: string) => Buffer.from(text).toString("base64");
+const EXPORT = {
+  headOid: "abc123",
+  files: [
+    { path: "playwright.config.ts", base64: b64("export default {};\n"), size: 19 },
+    { path: "tests/checkout.spec.ts", base64: b64("test('x', () => {});\n"), size: 21 },
+  ],
+};
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -21,6 +32,8 @@ function harness(argv: string[], api: FakeApi = {}, env: Record<string, string |
   const out: string[] = [];
   const err: string[] = [];
   const files: Record<string, string> = {};
+  const disk: Record<string, string> = {};
+  const spawned: Array<{ command: string; args: string[]; cwd: string; env: Record<string, string | undefined> }> = [];
   const polls: Record<string, number> = {};
   let t = 0;
   const fetchFn = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -34,6 +47,7 @@ function harness(argv: string[], api: FakeApi = {}, env: Record<string, string |
       return msg.id === undefined ? new Response(null, { status: 202 }) : json({ jsonrpc: "2.0", id: msg.id, result: { echoed: msg.method } });
     }
     if (path === "/me") return json({ userId: "u1", email: null, isAdmin: false });
+    if (path === "/projects/shop/export") return json(EXPORT);
     if (path === "/projects") return json({ projects: [{ name: "shop", url: "https://shop.example", createdAt: "2026-01-02T00:00:00Z" }] });
     if (path === "/projects/shop/test-files") return json({ files: api.files ?? Object.keys(api.script ?? {}) });
     if (path === "/projects/shop/runs" && method === "GET") return json({ runs: [run({ id: "old" })], total: 1 });
@@ -65,8 +79,16 @@ function harness(argv: string[], api: FakeApi = {}, env: Record<string, string |
     stdinLines: async function* () {},
     writeFile: async (p, d) => { files[p] = d; },
     appendFile: async (p, d) => { files[p] = (files[p] ?? "") + d; },
+    readText: async (p) => disk[p] ?? null,
+    writeBytes: async (p, bytes) => { disk[p] = new TextDecoder().decode(bytes); },
+    remove: async (p) => { delete disk[p]; },
+    exists: async (p) => p in disk || Object.keys(disk).some((k) => k.startsWith(`${p}/`)),
+    spawn: async (command, args, opts) => {
+      spawned.push({ command, args, cwd: opts.cwd, env: opts.env });
+      return api.spawn?.(command, args) ?? 0;
+    },
   };
-  return { deps, out: () => out.join(""), err: () => err.join(""), files, fetchFn };
+  return { deps, out: () => out.join(""), err: () => err.join(""), files, disk, spawned, fetchFn };
 }
 
 describe("main — meta", () => {
@@ -171,13 +193,13 @@ describe("main — API errors", () => {
       route: (m) => (m === "POST" ? json({ error: 'This API key does not have the "run" scope.' }, 403) : undefined),
     });
     expect(await main(h.deps)).toBe(3);
-    expect(h.err()).toContain("CI (read + run)");
+    expect(h.err()).toContain("CI / CLI (read + run)");
   });
 
   it("403 elsewhere has no scope hint", async () => {
     const h = harness(["projects"], { route: () => json({ error: "This account has been suspended." }, 403) });
     expect(await main(h.deps)).toBe(3);
-    expect(h.err()).not.toContain("CI (read + run)");
+    expect(h.err()).not.toContain("CI / CLI (read + run)");
   });
 
   it("404 names the project", async () => {
@@ -312,5 +334,58 @@ describe("main — mcp", () => {
   it("needs a key like every other command", async () => {
     const h = harness(["mcp"], {}, { PLUSWITHAI_API_KEY: undefined });
     expect(await main(h.deps)).toBe(2);
+  });
+});
+
+describe("main — pull and local (a local run)", () => {
+  it("pull writes the project's files under pluswithai/<project> and says how to run them", async () => {
+    const h = harness(["pull", "-p", "shop"]);
+    expect(await main(h.deps)).toBe(0);
+    expect(h.disk["pluswithai/shop/tests/checkout.spec.ts"]).toBe("test('x', () => {});\n");
+    expect(h.out()).toContain("Pulled 2 files into pluswithai/shop.");
+    expect(h.out()).toContain("npx playwright test");
+  });
+
+  it("pull --json, to another folder; a removed file and an unsafe path are reported", async () => {
+    const h = harness(["pull", "-p", "shop", "--dir", "x", "--json"], {
+      route: (_m, path) =>
+        path === "/projects/shop/export"
+          ? json({ headOid: "h", files: [{ path: "../evil", base64: "", size: 0 }, { path: "a.ts", base64: "", size: 0 }] })
+          : undefined,
+    });
+    h.disk["x/.pluswithai/pulled.json"] = JSON.stringify(["old.ts"]);
+    h.disk["x/old.ts"] = "o";
+    expect(await main(h.deps)).toBe(0);
+    expect(JSON.parse(h.out())).toMatchObject({ dir: "x", written: 1, removed: 1, skipped: ["../evil"] });
+    expect(h.err()).toContain("skipped 1 file(s) with unsafe paths: ../evil");
+    const plain = harness(["pull", "-p", "shop", "--dir", "x"]);
+    plain.disk["x/.pluswithai/pulled.json"] = JSON.stringify(["old.ts"]);
+    expect(await main(plain.deps)).toBe(0);
+    expect(plain.out()).toContain("(removed 1 the project no longer has)");
+  });
+
+  it("local pulls, installs, runs Playwright against the base URL and exits with its verdict", async () => {
+    const h = harness(["local", "-p", "shop", "-t", "tests/checkout.spec.ts", "--base-url", "http://localhost:3000", "--headed"]);
+    expect(await main(h.deps)).toBe(0);
+    expect(h.spawned.map((s) => `${s.command} ${s.args.join(" ")}`)).toEqual([
+      "npm install --no-audit --no-fund",
+      "npx playwright install chromium",
+      "npx playwright test tests/checkout.spec.ts --headed",
+    ]);
+    expect(h.spawned[2]).toMatchObject({ cwd: "pluswithai/shop", env: { PLUSWITHAI_BASE_URL: "http://localhost:3000" } });
+    const failing = harness(["local", "-p", "shop", "--dir", "w"], { spawn: (c, a) => (a[1] === "test" ? 1 : 0) });
+    expect(await main(failing.deps)).toBe(1);
+  });
+
+  it("a setup problem exits 2 with the reason; a plan that cannot download gets the hint", async () => {
+    const h = harness(["local", "-p", "shop", "--no-pull"]);
+    expect(await main(h.deps)).toBe(2);
+    expect(h.err()).toContain("has no project yet");
+    const pro = harness(["pull", "-p", "shop"], { route: (_m, p) => (p === "/projects/shop/export" ? json({ error: "Pro feature" }, 402) : undefined) });
+    expect(await main(pro.deps)).toBe(3);
+    expect(pro.err()).toContain("Your plan cannot download");
+    const proTest = harness(["local", "-p", "shop"], { route: (_m, p) => (p === "/projects/shop/export" ? json({ error: "Pro feature" }, 402) : undefined) });
+    expect(await main(proTest.deps)).toBe(3);
+    expect(proTest.err()).toContain("Your plan cannot download");
   });
 });

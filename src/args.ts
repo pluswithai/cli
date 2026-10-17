@@ -4,8 +4,8 @@
  */
 import { parseArgs, type ParseArgsConfig } from "node:util";
 
-export type CommandName = "run" | "projects" | "tests" | "runs" | "whoami" | "mcp";
-const COMMANDS: readonly CommandName[] = ["run", "projects", "tests", "runs", "whoami", "mcp"];
+export type CommandName = "run" | "local" | "pull" | "projects" | "tests" | "runs" | "whoami" | "mcp";
+const COMMANDS: readonly CommandName[] = ["run", "local", "pull", "projects", "tests", "runs", "whoami", "mcp"];
 
 export interface GlobalFlags {
   apiUrl?: string;
@@ -29,6 +29,17 @@ export type Command =
       json: boolean;
       summary: boolean;
     }
+  | {
+      kind: "local";
+      global: GlobalFlags;
+      project: string;
+      dir: string | undefined;
+      tests: string[];
+      baseUrl: string | undefined;
+      headed: boolean;
+      pull: boolean;
+    }
+  | { kind: "pull"; global: GlobalFlags; project: string; dir: string | undefined; json: boolean }
   | { kind: "projects"; global: GlobalFlags; json: boolean }
   | { kind: "tests"; global: GlobalFlags; project: string; json: boolean }
   | { kind: "runs"; global: GlobalFlags; project: string; limit: number; json: boolean }
@@ -68,6 +79,16 @@ const OPTIONS: Record<CommandName, Options> = {
     junit: { type: "string" },
     "no-summary": { type: "boolean" },
   },
+  local: {
+    ...GLOBAL,
+    ...PROJECT,
+    dir: { type: "string" },
+    test: { type: "string", short: "t", multiple: true },
+    "base-url": { type: "string" },
+    headed: { type: "boolean" },
+    "no-pull": { type: "boolean" },
+  },
+  pull: { ...GLOBAL, ...PROJECT, dir: { type: "string" } },
   projects: GLOBAL,
   tests: { ...GLOBAL, ...PROJECT },
   runs: { ...GLOBAL, ...PROJECT, limit: { type: "string" } },
@@ -137,6 +158,19 @@ export function parseCommand(argv: string[]): Command {
         json,
         summary: values["no-summary"] !== true,
       };
+    case "local":
+      return {
+        kind: "local",
+        global,
+        project: needProject(),
+        dir: values.dir as string | undefined,
+        tests: (values.test as string[] | undefined) ?? [],
+        baseUrl: values["base-url"] as string | undefined,
+        headed: values.headed === true,
+        pull: values["no-pull"] !== true,
+      };
+    case "pull":
+      return { kind: "pull", global, project: needProject(), dir: values.dir as string | undefined, json };
     case "projects":
       return { kind: "projects", global, json };
     case "tests":
@@ -185,6 +219,40 @@ Exit codes:
   0  every run passed        1  a run failed
   2  usage or configuration  3  Pluswithai or network error
   4  timed out waiting`,
+  local: `Usage: pluswithai local --project <name> [options]
+
+Run a project's tests on this machine: pull its files, install Playwright the
+first time, run "npx playwright test". Needs Node.js 18+.
+
+Options:
+  -p, --project <name>   Project (required)
+  --dir <path>           Where the project's files go (default pluswithai/<project>)
+  -t, --test <file>      Test file to run; repeat for several (default: every test)
+  --base-url <url>       Test another address, e.g. http://localhost:3000
+                         (sets PLUSWITHAI_BASE_URL, which the config reads)
+  --headed               Show the browser
+  --no-pull              Run what is already in --dir
+
+Secrets the project's Settings hold (HTTP auth, extra headers) are not
+downloaded: set PLUSWITHAI_HTTP_USERNAME, PLUSWITHAI_HTTP_PASSWORD and
+PLUSWITHAI_EXTRA_HEADERS (a JSON object) when the site needs them.
+
+${GLOBAL_HELP}
+
+Exit codes:
+  0  Playwright passed   1  a test failed
+  2  usage, configuration or local setup (npm, npx)   3  Pluswithai or network error`,
+  pull: `Usage: pluswithai pull --project <name> [--dir <path>] [--json]
+
+Download a project's files (tests, Playwright config, fixtures) to run them
+yourself: "npm install && npx playwright install chromium && npx playwright test".
+Files the project no longer has are removed from the folder.
+
+Options:
+  -p, --project <name>   Project (required)
+  --dir <path>           Destination (default pluswithai/<project>)
+
+${GLOBAL_HELP}`,
   projects: `Usage: pluswithai projects [--json]
 
 List the projects of the account.
@@ -231,7 +299,9 @@ export function helpText(topic?: CommandName): string {
 Run Pluswithai tests from CI and the terminal.
 
 Commands:
-  run        Start runs, wait for the results, exit non-zero on failure
+  run        Start runs in the cloud, wait for the results, exit non-zero on failure
+  local      Run a project's tests on this machine (e.g. against localhost)
+  pull       Download a project's files to run them yourself
   projects   List your projects
   tests      List a project's test files
   runs       Show a project's recent runs
